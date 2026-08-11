@@ -1,0 +1,22 @@
+- id: bilbao-street-closures
+  prompt: |
+    Today is {today} ({weekday}). Question: are any streets in Bilbao, Spain closed
+    or scheduled to close TODAY or TOMORROW because of an event, demonstration,
+    parade, race, festival, filming, or roadworks?
+
+    Search for current information. Prefer these sources:
+      - bilbao.eus (Ayuntamiento de Bilbao, "afecciones al trafico" / movilidad)
+      - Bizkaia / Euskadi traffic services (trafikoa)
+      - local press: El Correo, Deia, Bilbao Hiria
+
+    Rules:
+      - Only count closures with evidence dated within the last 7 days OR that
+        explicitly name a date of {today} or later.
+      - If you cannot find a specific, dated, cited closure, answer "no".
+      - Do not infer from routine or historical events. No source URL => "no".
+
+    Reply with ONLY a JSON object, no markdown fence:
+    {{"answer":"yes"|"no","summary":"<=200 chars in Spanish",
+      "details":["street + reason + dates", ...],
+      "evidence_date":"YYYY-MM-DD or unknown",
+      "sources":["url", ...]}}
