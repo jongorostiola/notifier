@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Ask Gemini a set of yes/no questions on a schedule; Telegram me only on change.
+"""Ask Gemini a set of yes/no questions on a schedule; Telegram me on every yes.
 
-Single file on purpose: this is a cron script, not an application.
+Stateless on purpose: nothing is remembered between runs, so an ongoing closure
+alerts again the next day. Single file on purpose: this is a cron script, not an
+application.
 """
 
 import argparse
@@ -21,7 +23,6 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent
 QUESTIONS_FILE = ROOT / "questions.yml"
-STATE_DIR = ROOT / "state"
 ENV_FILE = ROOT / ".env"
 TZ = ZoneInfo("Europe/Madrid")
 
@@ -154,60 +155,10 @@ def normalise(obj, grounding_urls):
 
 
 # --------------------------------------------------------------------------- #
-# State + change detection
-# --------------------------------------------------------------------------- #
-
-def state_path(qid):
-    return STATE_DIR / f"{qid}.json"
-
-
-def load_state(qid):
-    path = state_path(qid)
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as e:
-        log(f"  state unreadable ({e}), treating as absent")
-        return None
-
-
-def save_state(qid, result, checked_at):
-    STATE_DIR.mkdir(exist_ok=True)
-    payload = dict(result, checked_at=checked_at)
-    state_path(qid).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-
-
-def fingerprint(result):
-    """Details only — the model rewords `summary` every run."""
-    return sorted(set(result["details"]))
-
-
-def decide(prev, now):
-    """Return 'new' | 'updated' | 'cleared' | None."""
-    prev_answer = (prev or {}).get("answer", "no")
-    if now["answer"] == "yes":
-        if prev_answer != "yes":
-            return "new"
-        if fingerprint(prev) != fingerprint(now):
-            return "updated"
-        return None
-    if prev_answer == "yes":
-        return "cleared"
-    return None
-
-
-# --------------------------------------------------------------------------- #
 # Telegram
 # --------------------------------------------------------------------------- #
 
-HEADINGS = {
-    "new": "🚧 Nuevo",
-    "updated": "🚧 Actualizado",
-    "cleared": "✅ Resuelto",
-}
+HEADING = "🚧 Aviso"
 
 
 def send_telegram(text, token, chat_id):
@@ -227,17 +178,16 @@ def send_telegram(text, token, chat_id):
         raise RuntimeError(f"telegram sendMessage failed: HTTP {status}: {body[:500]}")
 
 
-def build_message(qid, change, result):
+def build_message(qid, result):
     e = html.escape
-    lines = [f"<b>{HEADINGS[change]} — {e(qid)}</b>"]
+    lines = [f"<b>{HEADING} — {e(qid)}</b>"]
     if result["summary"]:
         lines.append(e(result["summary"]))
     if result["details"]:
         lines.append("")
         lines += [f"• {e(d)}" for d in result["details"]]
-    if result["answer"] == "yes":
-        lines.append("")
-        lines.append(f"<i>Evidencia: {e(result['evidence_date'])}</i>")
+    lines.append("")
+    lines.append(f"<i>Evidencia: {e(result['evidence_date'])}</i>")
     if result["sources"]:
         lines.append("")
         lines += [
@@ -328,7 +278,6 @@ def run(args):
 
     now = datetime.now(TZ)
     today, weekday = now.strftime("%Y-%m-%d"), now.strftime("%A")
-    checked_at = now.isoformat(timespec="seconds")
     failures = 0
 
     for q in questions:
@@ -345,22 +294,20 @@ def run(args):
                 log(f"  unparseable reply, skipping. raw: {text[:800]!r}")
                 continue
 
-            prev = load_state(qid)
-            change = decide(prev, result)
+            notify = result["answer"] == "yes"
             log(f"  answer={result['answer']} sources={len(result['sources'])} "
-                f"change={change or 'none'}")
+                f"notify={'yes' if notify else 'no'}")
             log(f"  parsed: {json.dumps(result, ensure_ascii=False)}")
 
+            if not notify:
+                continue
             if args.dry_run:
-                if change:
-                    log("  would notify:")
-                    log(build_message(qid, change, result))
+                log("  would notify:")
+                log(build_message(qid, result))
                 continue
 
-            if change:
-                send_telegram(build_message(qid, change, result), token, chat_id)
-                log("  notified")
-            save_state(qid, result, checked_at)
+            send_telegram(build_message(qid, result), token, chat_id)
+            log("  notified")
         except Exception as e:  # one bad question must not abort the others
             failures += 1
             log(f"  FAILED: {e}")
@@ -371,7 +318,7 @@ def run(args):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--dry-run", action="store_true",
-                   help="print parsed answer + notify decision; send nothing, write nothing")
+                   help="print parsed answer + notify decision; send nothing")
     p.add_argument("--test-telegram", action="store_true",
                    help="send a fixed message to confirm token/chat id")
     p.add_argument("--probe", action="store_true",

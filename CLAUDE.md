@@ -10,9 +10,9 @@ cp .env.example .env                # fill in GEMINI_API_KEY, TELEGRAM_BOT_TOKEN
 
 python watcher.py --probe           # pin the Gemini API shape; run FIRST after any API/model change
 python watcher.py --test-telegram   # confirm token + chat id
-python watcher.py --dry-run         # parse + decide; sends nothing, writes no state
+python watcher.py --dry-run         # parse + decide; sends nothing
 python watcher.py --only <id>       # single question (repeatable flag)
-python watcher.py                   # real run: notifies and writes state/
+python watcher.py                   # real run: notifies on every yes
 ```
 
 There is no test suite, linter, or build. Verification is manual — the numbered procedure in
@@ -21,9 +21,9 @@ temporary `sky-test` question, because the real question is almost always `no`.
 
 ## Architecture
 
-One cron script, deliberately: `watcher.py` (~400 lines, stdlib + `pyyaml` only) driven by
-`questions.yml`, with `state/` as the only persistence. Adding a question is a YAML entry, never a
-code change. Do not split this into modules or add dependencies.
+One cron script, deliberately: `watcher.py` (~350 lines, stdlib + `pyyaml` only) driven by
+`questions.yml`, with **no persistence at all**. Adding a question is a YAML entry, never a code
+change. Do not split this into modules or add dependencies.
 
 Per-question flow in `run()`:
 
@@ -34,13 +34,13 @@ Per-question flow in `run()`:
    Gemini-3-preview-only.
 3. `normalise()` — merges model-declared `sources` with `extract_grounding_urls()` (the API's own
    citations), then applies the guard: **`answer: yes` with zero sources is forced to `no`**.
-4. `decide(prev, now)` → `new` / `updated` / `cleared` / `None`, comparing against `state/<id>.json`.
-5. Notify on change, then always `save_state()` (unless `--dry-run`).
+4. `answer == "yes"` → notify, `no` → silence. Nothing else.
 
 Two invariants worth preserving:
 
-- **Change is fingerprinted on `sorted(set(details))`, not `summary`.** The model rewords `summary`
-  every run; including it would fire a spurious daily "Actualizado".
+- **Stateless by choice.** There is no memory of the previous answer, so an ongoing closure re-alerts
+  daily and there is no "resolved" message. Do not reintroduce a `state/` dir, an Actions cache, or
+  any other store to dedupe repeats — the repetition is the intended behaviour.
 - **Fail quiet on ambiguity, loud on breakage.** An unparseable reply is logged and skipped with no
   notification; a failed question does not abort the others but makes the process exit 1; a non-2xx
   from Telegram raises. A silent notifier is the failure nobody notices.
@@ -66,10 +66,9 @@ instruct "no source URL => no", since `normalise()` enforces that anyway.
 
 ### CI
 
-`.github/workflows/watch.yml` runs daily at 05:00 UTC and commits `state/` back to the repo with
-`contents: write`. That commit is load-bearing — it is the only memory of the previous answer, so a
-run whose state commit fails will re-alert next time. Cron is UTC and ignores DST, so the local fire
-time drifts an hour in winter. `GEMINI_MODEL` comes from a repo **variable**, not a secret.
+`.github/workflows/watch.yml` runs daily at 05:00 UTC and writes nothing back — `contents: read` is
+enough, the job is pure read-and-notify. Cron is UTC and ignores DST, so the local fire time drifts an
+hour in winter. `GEMINI_MODEL` comes from a repo **variable**, not a secret.
 
 `load_env_file()` never overwrites an already-set variable, so `.env` is inert in CI.
 

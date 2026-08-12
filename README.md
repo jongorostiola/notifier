@@ -1,13 +1,15 @@
 # Notifier
 
-Asks Gemini a list of yes/no questions on a daily cron and sends a Telegram message **only when the
-answer changes**. Config-driven: adding a question is one entry in `questions.yml`, no code change.
+Asks Gemini a list of yes/no questions on a daily cron and sends a Telegram message **every time the
+answer is yes**. Config-driven: adding a question is one entry in `questions.yml`, no code change.
+
+Stateless: nothing is remembered between runs and nothing is committed back to the repo. An ongoing
+closure therefore alerts again every day it lasts.
 
 ```
 .github/workflows/watch.yml   cron + manual trigger
 watcher.py                    the whole thing
 questions.yml                 the questions
-state/                        last answer per question, committed back by the workflow
 ```
 
 ## Setup
@@ -27,9 +29,6 @@ state/                        last answer per question, committed back by the wo
    in the Secrets tab. Leave it unset to use the default baked into `watcher.py`. Locally, `.env` does
    the same job.
 
-4. Allow Actions to push: Settings → Actions → General → Workflow permissions → **Read and write**.
-   (The workflow already requests `contents: write`, but the repo-level setting must permit it.)
-
 ## Local use
 
 ```bash
@@ -38,7 +37,7 @@ cp .env.example .env     # then fill in the three values
 
 python watcher.py --probe           # pin the API shape — run this FIRST, see below
 python watcher.py --test-telegram   # confirm token + chat id
-python watcher.py --dry-run         # parse + decide, send nothing, write no state
+python watcher.py --dry-run         # parse + decide, send nothing
 python watcher.py --only bilbao-street-closures
 python watcher.py                   # the real thing
 ```
@@ -69,24 +68,19 @@ Append to `questions.yml`. `{today}` and `{weekday}` are substituted (Europe/Mad
 
 ## When it notifies
 
-| Previous | Now | Message |
-|---|---|---|
-| absent or `no` | `yes` | 🚧 Nuevo |
-| `yes` | `yes`, different `details` | 🚧 Actualizado |
-| `yes` | `no` | ✅ Resuelto |
-| `no` | `no` | *(silence)* |
-| `yes` | `yes`, same `details` | *(silence)* |
+| Now | Message |
+|---|---|
+| `yes` | 🚧 Aviso |
+| `no` | *(silence)* |
 
-Change is fingerprinted on `sorted(set(details))`, not on `summary` — the model rewords the summary
-every run, which would fire a spurious daily "updated".
+That's the whole rule. There is no previous answer to compare against, so a closure that lasts three
+days sends three messages, and there is no "resolved" message when it ends — silence is the signal.
 
 Guards:
 - `answer: yes` with zero sources is forced to `no` and logged. Every Yes carries a URL.
 - An unparseable reply is logged and skipped — no notification. Fail quiet on ambiguity.
 - A failed question does not abort the others, but makes the run exit non-zero (red).
 - A non-2xx from Telegram exits non-zero. A silent notifier is the failure you'd never notice.
-
-State is always written when not in `--dry-run`, notification or not.
 
 ## Verification
 
@@ -105,14 +99,10 @@ State is always written when not in `--dry-run`, notification or not.
          "evidence_date":"YYYY-MM-DD or unknown","sources":["url"]}}
    ```
 
-   `python watcher.py --only sky-test` → Telegram message. Then remove the entry and
-   `state/sky-test.json`.
-5. **Change detection** — edit `state/bilbao-street-closures.json` to `"answer": "no"` with
-   `"details": []`, re-run → expect a "Nuevo" alert *if* today's answer is yes. To test deterministically,
-   use `sky-test`: run it, then blank its state and re-run (expect an alert), then re-run again
-   immediately (expect silence).
-6. `workflow_dispatch` in GitHub → green run, `state/` commit appears, quota visible in AI Studio.
-7. Let one real cron fire; confirm it ran near 07:00 Madrid.
+   `python watcher.py --only sky-test` → Telegram message. Run it twice: both runs must alert,
+   because there is no state to suppress the second. Then remove the entry.
+5. `workflow_dispatch` in GitHub → green run, no commit to the repo, quota visible in AI Studio.
+6. Let one real cron fire; confirm it ran near 07:00 Madrid.
 
 ## Notes
 

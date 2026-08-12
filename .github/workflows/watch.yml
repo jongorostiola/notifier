@@ -6,7 +6,7 @@ on:
   workflow_dispatch:      # keep — this is how you test
 
 permissions:
-  contents: write         # required to commit state/
+  contents: read          # stateless: nothing is committed back
 
 concurrency:
   group: watcher
@@ -32,11 +32,3 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}   # repo variable; unset = code default
         run: python watcher.py
-
-      - name: Commit state
-        run: |
-          git config user.name  'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add state/
-          git diff --cached --quiet || git commit -m 'chore: update watcher state'
-          git push
