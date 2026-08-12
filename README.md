@@ -38,7 +38,7 @@ cp .env.example .env     # then fill in the three values
 python watcher.py --probe           # pin the API shape — run this FIRST, see below
 python watcher.py --test-telegram   # confirm token + chat id
 python watcher.py --dry-run         # parse + decide, send nothing
-python watcher.py --only bilbao-street-closures
+python watcher.py --only bilbao-abando-closures
 python watcher.py                   # the real thing
 ```
 
@@ -65,6 +65,12 @@ of each, writes the first 200 to `probe.json`, and reports how many
 Append to `questions.yml`. `{today}` and `{weekday}` are substituted (Europe/Madrid, not UTC);
 **literal JSON braces must be doubled** — `{{"answer":...}}` — because the prompt goes through
 `str.format`. Ask for the same JSON object shape; `answer` must be `"yes"` or `"no"`.
+
+| Key | Required | Purpose |
+|---|---|---|
+| `id` | yes | machine-facing: the `--only` argument and the run log prefix. Keep it a slug — lowercase, no spaces. |
+| `title` | no | human-facing: the Telegram heading. Free text, accents and spaces fine. Falls back to `id` if omitted. |
+| `prompt` | yes | what gets sent to Gemini. |
 
 ## When it notifies
 

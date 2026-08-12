@@ -64,6 +64,10 @@ Prompts in `questions.yml` pass through `str.format(today=..., weekday=...)` wit
 must ask for the same object shape (`answer`/`summary`/`details`/`evidence_date`/`sources`) and
 instruct "no source URL => no", since `normalise()` enforces that anyway.
 
+`id` is machine-facing (the `--only` argument, the log prefix) and stays a slug; the optional `title`
+is the Telegram heading and falls back to `id`. Do not merge the two — a pretty `id` has to be quoted
+on the command line.
+
 ### CI
 
 `.github/workflows/watch.yml` runs daily at 05:00 UTC and writes nothing back — `contents: read` is

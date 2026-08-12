@@ -158,9 +158,6 @@ def normalise(obj, grounding_urls):
 # Telegram
 # --------------------------------------------------------------------------- #
 
-HEADING = "🚧 Aviso"
-
-
 def send_telegram(text, token, chat_id):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     status, body = post_json(
@@ -178,9 +175,9 @@ def send_telegram(text, token, chat_id):
         raise RuntimeError(f"telegram sendMessage failed: HTTP {status}: {body[:500]}")
 
 
-def build_message(qid, result):
+def build_message(label, result):
     e = html.escape
-    lines = [f"<b>{HEADING} — {e(qid)}</b>"]
+    lines = [f"<b>🚧 {e(label)} 🚧</b>"]
     if result["summary"]:
         lines.append(e(result["summary"]))
     if result["details"]:
@@ -282,6 +279,7 @@ def run(args):
 
     for q in questions:
         qid = q["id"]
+        label = q.get("title") or qid  # `title` is for humans, `id` for --only
         log(f"[{qid}]")
         try:
             prompt = q["prompt"].format(today=today, weekday=weekday)
@@ -303,10 +301,10 @@ def run(args):
                 continue
             if args.dry_run:
                 log("  would notify:")
-                log(build_message(qid, result))
+                log(build_message(label, result))
                 continue
 
-            send_telegram(build_message(qid, result), token, chat_id)
+            send_telegram(build_message(label, result), token, chat_id)
             log("  notified")
         except Exception as e:  # one bad question must not abort the others
             failures += 1
