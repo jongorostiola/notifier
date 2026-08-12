@@ -84,7 +84,7 @@ and the alert chat keeps its silence-as-signal property.
 
 | Now | Message |
 |---|---|
-| `yes` | 🚧 Aviso |
+| `yes` | 🚧 {{title}} 🚧 |
 | `no` | *(silence)* |
 
 That's the whole rule. There is no previous answer to compare against, so a closure that lasts three
