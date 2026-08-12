@@ -260,8 +260,22 @@ def probe(api_key):
     return 1
 
 
+def load_questions():
+    return yaml.safe_load(QUESTIONS_FILE.read_text(encoding="utf-8")) or []
+
+
+def question_chats():
+    """Every distinct chat: in questions.yml, in file order."""
+    chats = []
+    for q in load_questions():
+        chat = q.get("chat")
+        if chat and chat not in chats:
+            chats.append(chat)
+    return chats
+
+
 def run(args):
-    questions = yaml.safe_load(QUESTIONS_FILE.read_text(encoding="utf-8")) or []
+    questions = load_questions()
     if args.only:
         questions = [q for q in questions if q["id"] in args.only]
         if not questions:
@@ -271,7 +285,6 @@ def run(args):
     api_key = env_or_die("GEMINI_API_KEY")
     if not args.dry_run:
         token = env_or_die("TELEGRAM_BOT_TOKEN")
-        chat_id = env_or_die("TELEGRAM_CHAT_ID")
 
     now = datetime.now(TZ)
     today, weekday = now.strftime("%Y-%m-%d"), now.strftime("%A")
@@ -282,6 +295,11 @@ def run(args):
         label = q.get("title") or qid  # `title` is for humans, `id` for --only
         log(f"[{qid}]")
         try:
+            chat = q.get("chat")
+            if not chat:
+                # Before the Gemini call, so a config slip costs no quota and
+                # --dry-run catches it.
+                raise RuntimeError("no chat: in questions.yml — nowhere to send")
             prompt = q["prompt"].format(today=today, weekday=weekday)
             response = call_gemini(prompt, api_key)
             text = extract_text(response)
@@ -300,12 +318,12 @@ def run(args):
             if not notify:
                 continue
             if args.dry_run:
-                log("  would notify:")
+                log(f"  would notify chat={chat}:")
                 log(build_message(label, result))
                 continue
 
-            send_telegram(build_message(label, result), token, chat_id)
-            log("  notified")
+            send_telegram(build_message(label, result), token, chat)
+            log(f"  notified chat={chat}")
         except Exception as e:  # one bad question must not abort the others
             failures += 1
             log(f"  FAILED: {e}")
@@ -318,7 +336,7 @@ def main():
     p.add_argument("--dry-run", action="store_true",
                    help="print parsed answer + notify decision; send nothing")
     p.add_argument("--test-telegram", action="store_true",
-                   help="send a fixed message to confirm token/chat id")
+                   help="send a fixed message to every chat: in questions.yml")
     p.add_argument("--probe", action="store_true",
                    help="pin the Gemini tool key and citation path, write probe.json")
     p.add_argument("--only", action="append", metavar="ID",
@@ -330,13 +348,19 @@ def main():
     if args.probe:
         return probe(env_or_die("GEMINI_API_KEY"))
     if args.test_telegram:
-        send_telegram(
-            "🚧 <b>Notifier</b> test message — if you see this, "
-            "the token and chat id are correct.",
-            env_or_die("TELEGRAM_BOT_TOKEN"),
-            env_or_die("TELEGRAM_CHAT_ID"),
-        )
-        log("sent")
+        token = env_or_die("TELEGRAM_BOT_TOKEN")
+        chats = question_chats()
+        if not chats:
+            log("no question sets chat: — nothing to test")
+            return 1
+        for chat in chats:
+            send_telegram(
+                "🚧 <b>Notifier</b> test message — if you see this, "
+                "the token and this chat id are correct.",
+                token,
+                chat,
+            )
+            log(f"sent to {chat}")
         return 0
     return run(args)
 

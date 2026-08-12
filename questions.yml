@@ -1,5 +1,6 @@
 - id: bilbao-street-closures
   title: Cierre carreteras Bilbao
+  chat: 8180367244
   prompt: |
     Today is {today} ({weekday}). I live on Paseo de Uribitarte in Bilbao, Spain, and I
     drive into the city over the Puente de La Salve. Question: is any street in MY ZONE

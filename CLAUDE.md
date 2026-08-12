@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env                # fill in GEMINI_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+cp .env.example .env                # fill in GEMINI_API_KEY, TELEGRAM_BOT_TOKEN
 
 python watcher.py --probe           # pin the Gemini API shape; run FIRST after any API/model change
-python watcher.py --test-telegram   # confirm token + chat id
+python watcher.py --test-telegram   # message every chat: in questions.yml
 python watcher.py --dry-run         # parse + decide; sends nothing
 python watcher.py --only <id>       # single question (repeatable flag)
 python watcher.py                   # real run: notifies on every yes
@@ -67,6 +67,12 @@ instruct "no source URL => no", since `normalise()` enforces that anyway.
 `id` is machine-facing (the `--only` argument, the log prefix) and stays a slug; the optional `title`
 is the Telegram heading and falls back to `id`. Do not merge the two — a pretty `id` has to be quoted
 on the command line.
+
+`chat` is required and holds the Telegram chat id **literally**, not an env var name: a new question
+must never mean editing repo secrets, and a chat id is config, not a credential — sending needs the
+bot token. It is checked before `call_gemini()` so a missing `chat:` costs no grounding quota, and
+`--dry-run` catches it. `--test-telegram` sends to every distinct `chat:` in the file, which is why no
+`TELEGRAM_CHAT_ID` exists anywhere.
 
 ### CI
 
